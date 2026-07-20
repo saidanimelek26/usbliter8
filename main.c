@@ -15,6 +15,8 @@
 #include "usb.h"
 #include "log.h"
 
+#include "pico_oled/oled.h"
+
 #if WITH_AUTO_MODE
 
 #define WITH_AUTO_REBOOT            (0)
@@ -62,6 +64,7 @@ void do_auto(void) {
          * UPDATE: same behavior for already PWNED devices
          */
         if (ret == -2) {
+            oled_show_status(false);
             sleep_ms(CONNECTION_FAIL_SLEEP_MS);
             usb_bus_reset_open_ep0();
             continue;
@@ -73,6 +76,7 @@ void do_auto(void) {
         }
 
         /* it all went well then */
+        oled_show_status(true);
         break;
     }
 
@@ -179,6 +183,10 @@ int main(void) {
 
     led_set_state(LED_STATE_IDLE);
 
+    // Initialize OLED (SDA=GPIO4, SCL=GPIO5)
+    oled_init_i2c(i2c0, 4, 5);
+    oled_show_connecting();
+
     printf("\n============ %s v%s ============\n", PICO_PROGRAM_NAME, PICO_PROGRAM_VERSION_STRING);
     printf("built for %s, PIO USB @ GP%d/%d (D+/D-)\n\n", BOARD_NAME, PIO_USB_DP_PIN_DEFAULT, PIO_USB_DP_PIN_DEFAULT + 1);
 
@@ -193,6 +201,10 @@ int main(void) {
     usb_start();
     usb_bus_init();
     usb_bus_wait_for_device();
+
+    // Device detected
+    oled_show_status(true);
+
     usb_bus_reset_open_ep0();
 
 #if WITH_AUTO_MODE
