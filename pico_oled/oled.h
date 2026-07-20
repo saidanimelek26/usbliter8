@@ -10,5 +10,8 @@ void oled_show_connecting(void);
 void oled_show_message(const char *line1, const char *line2);
 void oled_show_done(void);
 void oled_show_error(void);
+void oled_show_running(void);
+void oled_show_unsupported(void);
+void oled_show_already_pwned(void);
 
 #endif // OLED_H
