@@ -1,215 +1,82 @@
-#include <pico/stdio.h>
-#include <pico/time.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "hardware/clocks.h"
-#include "hardware/watchdog.h"
-#include "led.h"
-#include "pico/stdlib.h"
-#include "pico/bootrom.h"
-
-#include "bus.h"
-#include "exploit.h"
-#include "usb.h"
-#include "log.h"
-
-#include "pico_oled/oled.h"
-
-#if WITH_AUTO_MODE
-
-#define WITH_AUTO_REBOOT            (0)
-#define FAILURE_REBOOT_DELAY_SEC    (3)
-#define SUCCESS_REBOOT_DELAY_SEC    (5)
-
-#define CONNECTION_FAIL_SLEEP_MS    (500)
-
-__attribute__((noreturn))
-void fatal_failure(void) {
-    led_set_state(LED_STATE_ERROR);
-
-#if WITH_AUTO_REBOOT
-    printf("\nfatal failure, rebooting in %d seconds\n", FAILURE_REBOOT_DELAY_SEC);
-
-    sleep_ms(FAILURE_REBOOT_DELAY_SEC * 1000);
-
-    watchdog_reboot(0, SRAM_END, 1);
-    while (1) {}
-
-#else
-    printf("\nfatal failure, spinning forever\n");
-
-    while (1) {
-        sleep_ms(100);
-    }
-#endif
-}
-
 __attribute__((noreturn))
 void do_auto(void) {
     while (true) {
-        int ret = exploit_run();
+        // show waiting until a DFU-capable device appears
+        oled_show_connecting();
 
-        /*
-         * This case means not even device descriptor
-         * could be queried
-         *
-         * On those boards with redundant resistor
-         * it could mean that device was not even
-         * connected yet
-         *
-         * So we sleep a bit, reset the bus and try again
-         *
-         * UPDATE: same behavior for already PWNED devices
-         */
-        if (ret == -2) {
-            oled_show_status(false);
+        // block until any USB device connects
+        usb_bus_wait_for_device();
+
+        // try to identify device
+        uint16_t cpid = 0;
+        bool pwnd = false;
+        int idret = device_identify(&cpid, &pwnd);
+
+        if (idret == -2) {
+            // couldn't talk to device (not in DFU / not responding) -> keep waiting
+            oled_show_connecting();
             sleep_ms(CONNECTION_FAIL_SLEEP_MS);
             usb_bus_reset_open_ep0();
             continue;
         }
 
-        /* no-go failure, bailing */
+        if (idret != 0) {
+            // device present but not Apple DFU (or other transient error)
+            oled_show_status(false); // shows "Phone: Disconnected"
+            sleep_ms(CONNECTION_FAIL_SLEEP_MS);
+            usb_bus_reset_open_ep0();
+            continue;
+        }
+
+        // identified as Apple DFU
+        if (pwnd) {
+            oled_show_already_pwned(); // shows "Already / PWNED"
+            // DEFAULT: stay here (don't try exploit again). Change behavior if you want.
+            while (1) sleep_ms(1000);
+        }
+
+        // choose exploit based on cpid (exploit_run already handles this internally,
+        // but we can use direct usb_bus_execute flows if desired)
+        usb_executee_t func = NULL;
+        switch (cpid) {
+            case 0x8020:
+            case 0x8006:
+                func = t8020_t8006_exploit_run;
+                break;
+            case 0x8030:
+                func = t8030_exploit_run;
+                break;
+            default:
+                // unsupported CPID -> treat as disconnected per requirement
+                oled_show_status(false);
+                sleep_ms(CONNECTION_FAIL_SLEEP_MS);
+                usb_bus_reset_open_ep0();
+                continue;
+        }
+
+        // run exploit
+        oled_show_message("Exploit:", "Running");
+        int ret = usb_bus_execute(func, &cpid, EXPLOIT_TIMEOUT);
+
         if (ret != 0) {
-            fatal_failure();
+            oled_show_message("Exploit:", "Error");
+            // retry after a short delay (default). If you want to stop, change this.
+            sleep_ms(CONNECTION_FAIL_SLEEP_MS);
+            usb_bus_reset_open_ep0();
+            continue;
         }
 
-        /* it all went well then */
-        oled_show_status(true);
-        break;
-    }
-
-#if WITH_AUTO_REBOOT
-    printf("\nsuccess, rebooting in %d seconds\n", SUCCESS_REBOOT_DELAY_SEC);
-
-    sleep_ms(SUCCESS_REBOOT_DELAY_SEC * 1000);
-
-    watchdog_reboot(0, SRAM_END, 1);
-    while (1) {}
-#else
-    printf("\nsuccess, spinning forever\n");
-
-    while (1) {
-        sleep_ms(100);
-    }
-#endif
-}
-
-#else
-
-static void help(void) {
-    printf("'e'\texploit\n");
-    printf("'r'\tbus reset\n");
-    printf("'p'\treboot\n");
-    printf("'h'\thelp\n");
-}
-
-void do_shell(void) {
-    char buf[2] = { 0 };
-
-    printf("\nDEBUG build, starting command prompt\n");
-
-    printf("\n");
-    help();
-    printf("\n");
-
-    while (1) {
-        printf("> ");
-
-        char c = stdio_getchar();
-
-        printf("%c\n", c);
-
-        switch (c) {
-            case 'r': {
-                printf("Resetting the bus...\n");
-                usb_bus_reset_open_ep0();
-                break;
-            }
-
-            case 'e': {
-                usb_bus_reset_open_ep0();
-                int ret = exploit_run();
-
-                if (ret == -2) {
-                    printf("failed to discover a device\n");
-                }
-
-                break;
-            }
-
-            case 'p': {
-                printf("Rebooting the Pico...\n");
-
-                sleep_ms(100);
-                watchdog_reboot(0, SRAM_END, 1);
-                while (1) {}
-            }
-
-            case 'h': {
-                help();
-                break;
-            }
-
-            default: {
-                printf("Unknown command '%s'\n", buf);
-                break;
-            }
+        // verify result
+        usb_bus_reset_open_ep0();
+        if (device_identify(&cpid, &pwnd) != 0 || !pwnd) {
+            oled_show_message("Exploit:", "Error");
+            sleep_ms(CONNECTION_FAIL_SLEEP_MS);
+            continue;
         }
+
+        // success
+        oled_show_message("Exploit:", "Done");
+        led_set_state(LED_STATE_SUCCESS);
+        while (1) sleep_ms(1000);
     }
-}
-
-#endif
-
-int main(void) {
-    // PIO USB needs sys_clk to be a multiple of 12 MHz
-#if PICO_RP2350
-    set_sys_clock_khz(156000, true);
-#elif PICO_RP2040
-    set_sys_clock_khz(120000, true);
-#else
-#error What is this MCU even?
-#endif
-
-    led_init();
-    led_set_state(LED_STATE_BOOTING);
-
-    stdio_init_all();
-
-    // this delay being long enough, seems to have
-    // a HUGE impact on the exploit reliability
-    sleep_ms(2000);
-
-    led_set_state(LED_STATE_IDLE);
-
-    // Initialize OLED (SDA=GPIO4, SCL=GPIO5)
-    oled_init_i2c(i2c0, 4, 5);
-    oled_show_connecting();
-
-    printf("\n============ %s v%s ============\n", PICO_PROGRAM_NAME, PICO_PROGRAM_VERSION_STRING);
-    printf("built for %s, PIO USB @ GP%d/%d (D+/D-)\n\n", BOARD_NAME, PIO_USB_DP_PIN_DEFAULT, PIO_USB_DP_PIN_DEFAULT + 1);
-
-#if PICO_RP2040
-    printf("==========================================================\n");
-    printf("WARNING: RP2040 reliability is not the best in many cases,\n");
-    printf("you shall better switch to RP2350\n");
-    printf("==========================================================\n");
-    printf("\n");
-#endif
-
-    usb_start();
-    usb_bus_init();
-    usb_bus_wait_for_device();
-
-    // Device detected
-    oled_show_status(true);
-
-    usb_bus_reset_open_ep0();
-
-#if WITH_AUTO_MODE
-    do_auto();
-#else
-    do_shell();
-#endif
 }
