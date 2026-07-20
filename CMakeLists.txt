@@ -30,6 +30,8 @@ add_executable(usbliter8
     bus.c
     usb.c
     exploit.c
+    pico_oled/ssd1306.c
+    pico_oled/oled.c
 )
 
 pico_set_program_name(usbliter8 "usbliter8")
@@ -47,10 +49,13 @@ pico_enable_stdio_usb(usbliter8 1)
 
 add_subdirectory(pio_usb)
 
+target_include_directories(usbliter8 PRIVATE ${CMAKE_CURRENT_LIST_DIR}/pico_oled)
+
 target_link_libraries(usbliter8
     pico_stdlib
     pico_status_led
     hardware_pwm
+    hardware_i2c
     pio_usb
 )
 
