@@ -1,6 +1,8 @@
 #include <stdint.h>
+#include <string.h>
 
 #include "pico/multicore.h"
+#include "pico/time.h"
 
 #include "usb.h"
 #include "bus.h"
@@ -126,7 +128,7 @@ int usb_bus_execute(usb_executee_t func, void *ctx, uint64_t timeout) {
 }
 
 // ============================================
-// New functions for VID/PID and device support
+// New functions for OLED display and device info
 // ============================================
 
 uint16_t usb_get_vid(void) {
@@ -162,7 +164,7 @@ bool is_device_supported(uint16_t vid, uint16_t pid) {
             return true;
         }
         // A13 SoC (iPhone 11, 11 Pro, 11 Pro Max)
-        // iPhone 11: D221, iPhone 11 Pro: D321? Actually D421, D411
+        // iPhone 11: D221, iPhone 11 Pro: D421, D411
         if (pid == 0x12B0 || pid == 0x12B2) {
             return true;
         }
@@ -177,18 +179,53 @@ bool is_device_supported(uint16_t vid, uint16_t pid) {
 bool usb_bus_wait_for_device_timeout(uint32_t timeout_ms) {
     uint32_t start = time_us_32();
     while (time_us_32() - start < timeout_ms * 1000) {
-        if (usb_bus_wait_for_device() == 0) {
-            return true;
+        // Try to get device
+        int ret = _usb_task_execute_cmd(USB_CMD_WAIT_FOR_DEVICE, 100 * 1000); // 100ms timeout per attempt
+        if (ret == 0) {
+            // Get VID/PID
+            uint32_t result = _usb_task_execute_cmd(USB_CMD_GET_VID_PID, DEFAULT_TIMEOUT_US);
+            if (result != (uint32_t)-1) {
+                g_device_vid = (result >> 16) & 0xFFFF;
+                g_device_pid = result & 0xFFFF;
+                INFO("Device found: VID=0x%04X, PID=0x%04X", g_device_vid, g_device_pid);
+                return true;
+            }
         }
         sleep_ms(10);
     }
     return false;
 }
 
-// Function to check if device is already pwned
 bool usb_is_device_pwned(void) {
     // Check if device serial number contains "PWND" string
     // This would be implemented based on your specific detection logic
-    // For now, return false
+    // You need to read the device descriptor and check the serial number
+    
+    // For now, return false (not pwned)
+    // TODO: Implement actual check
     return false;
+}
+
+void usb_get_device_info_string(uint16_t vid, uint16_t pid, char *buf, size_t buf_size) {
+    const char *device_name = usb_get_device_name(vid, pid);
+    snprintf(buf, buf_size, "%s (0x%04X:0x%04X)", device_name, vid, pid);
+}
+
+const char* usb_get_device_name(uint16_t vid, uint16_t pid) {
+    if (vid == 0x05AC) { // Apple
+        switch (pid) {
+            case 0x12A8: return "iPhone XS";
+            case 0x12AA: return "iPhone XS Max";
+            case 0x12AB: return "iPhone XR";
+            case 0x12AC: return "iPhone XS (var)";
+            case 0x12A0: return "Apple Watch S4";
+            case 0x12A2: return "Apple Watch S5";
+            case 0x12B0: return "iPhone 11";
+            case 0x12B2: return "iPhone 11 Pro";
+            case 0x12A4: return "iPad Pro 2018 (11\")";
+            case 0x12A6: return "iPad Pro 2018 (12.9\")";
+            default: return "Apple Device";
+        }
+    }
+    return "Unknown Device";
 }
