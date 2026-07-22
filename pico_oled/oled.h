@@ -2,15 +2,34 @@
 #define OLED_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "hardware/i2c.h"
 
+// Core functions
 void oled_init_i2c(i2c_inst_t *i2c, uint gpio_sda, uint gpio_scl);
+void oled_show_message(const char *line1, const char *line2);
+void oled_clear(void);
+
+// Status messages for usbliter8
+void oled_show_booting(void);
+void oled_show_waiting_dfu(void);
+void oled_show_device_found(uint16_t vid, uint16_t pid);
+void oled_show_exploiting(void);
+void oled_show_exploit_progress(uint8_t percent);
+void oled_show_stage(const char *stage);
+void oled_show_pwnd_success(void);
+void oled_show_done(void);
+void oled_show_unsupported(void);
+void oled_show_already_pwned(void);
+void oled_show_error(const char *error_msg);
+void oled_show_reboot_needed(void);
+void oled_show_led_sync(const char *state);
+
+// Legacy compatibility functions
 void oled_show_status(bool connected);
 void oled_show_connecting(void);
-void oled_show_message(const char *line1, const char *line2);
-void oled_show_done(void);
-void oled_show_error(void);
 void oled_show_running(void);
+void oled_show_error(void);
 void oled_show_unsupported(void);
 void oled_show_already_pwned(void);
 
