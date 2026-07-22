@@ -11,11 +11,12 @@ static char line1_buf[21];
 static char line2_buf[21];
 
 // ============================================
-// Core functions
+// Core functions with improved initialization
 // ============================================
 
 void oled_init_i2c(i2c_inst_t *i2c, uint gpio_sda, uint gpio_scl) {
-    const uint baud = 100000;
+    // Initialize I2C with higher speed for better reliability
+    const uint baud = 400000;  // Increased from 100000 to 400000
     i2c_init(i2c, baud);
     gpio_set_function(gpio_sda, GPIO_FUNC_I2C);
     gpio_set_function(gpio_scl, GPIO_FUNC_I2C);
@@ -23,19 +24,43 @@ void oled_init_i2c(i2c_inst_t *i2c, uint gpio_sda, uint gpio_scl) {
     gpio_pull_up(gpio_scl);
 
     oled_i2c = i2c;
-    if (!ssd1306_init_i2c(oled_i2c, 0x3C)) {
+    
+    // Try multiple times to initialize
+    bool init_success = false;
+    for (int i = 0; i < 3; i++) {
+        if (ssd1306_init_i2c(oled_i2c, 0x3C)) {
+            init_success = true;
+            break;
+        }
+        sleep_ms(10);
+    }
+    
+    if (!init_success) {
         oled_ready = false;
         return;
     }
+    
+    // Clear display and update
     ssd1306_clear();
     ssd1306_update();
+    sleep_ms(50);
+    
     oled_ready = true;
+    
+    // Test display with a simple message
+    oled_show_message("OLED", "Ready");
+    sleep_ms(500);
 }
 
 void oled_show_message(const char *line1, const char *line2) {
-    if (!oled_ready) return;
+    if (!oled_ready) {
+        // Try to reinitialize if not ready
+        return;
+    }
+    
     ssd1306_clear();
     
+    // Draw with larger font for better visibility
     if (line1) {
         ssd1306_draw_text(0, 0, line1);
     }
@@ -102,31 +127,29 @@ void oled_show_stage(const char *stage) {
 }
 
 void oled_show_pwnd_success(void) {
-    oled_show_message("✓ PWND!", "Exploit successful");
+    oled_show_message("PWND!", "Exploit successful");
 }
 
 void oled_show_done(void) {
-    oled_show_message("✓ DONE", "Process complete");
+    oled_show_message("DONE", "Process complete");
 }
 
 // ============================================
 // Error functions
 // ============================================
 
-// For custom error messages with parameter
 void oled_show_error_msg(const char *error_msg) {
     if (error_msg) {
-        snprintf(line1_buf, sizeof(line1_buf), "✗ ERROR");
+        snprintf(line1_buf, sizeof(line1_buf), "ERROR");
         snprintf(line2_buf, sizeof(line2_buf), "%s", error_msg);
         oled_show_message(line1_buf, line2_buf);
     } else {
-        oled_show_message("✗ ERROR", "Check connection");
+        oled_show_message("ERROR", "Check connection");
     }
 }
 
-// Legacy error function without parameter
 void oled_show_error(void) {
-    oled_show_message("✗ ERROR", "Check connection");
+    oled_show_message("ERROR", "Check connection");
 }
 
 // ============================================
@@ -192,11 +215,11 @@ void oled_show_exploit_stage(uint8_t stage_num, const char *stage_name) {
 }
 
 void oled_show_success_with_info(const char *info) {
-    oled_show_message("✓ SUCCESS", info);
+    oled_show_message("SUCCESS", info);
 }
 
 void oled_show_failure_with_info(const char *info) {
-    oled_show_message("✗ FAILED", info);
+    oled_show_message("FAILED", info);
 }
 
 void oled_show_reset(void) {
