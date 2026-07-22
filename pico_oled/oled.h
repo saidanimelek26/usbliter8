@@ -22,9 +22,9 @@ void oled_show_done(void);
 void oled_show_unsupported(void);
 void oled_show_already_pwned(void);
 
-// Keep BOTH versions of oled_show_error
-void oled_show_error(const char *error_msg);  // With parameter
-void oled_show_error(void);                    // Without parameter (legacy)
+// Error functions with DIFFERENT names
+void oled_show_error_msg(const char *error_msg);  // With parameter - FOR NEW CODE
+void oled_show_error(void);                        // Without parameter - FOR LEGACY
 
 void oled_show_reboot_needed(void);
 void oled_show_led_sync(const char *state);
