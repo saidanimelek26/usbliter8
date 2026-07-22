@@ -118,11 +118,11 @@ void oled_show_already_pwned(void) {
 }
 
 // ============================================
-// Both versions of oled_show_error
+// Error functions with DIFFERENT names
 // ============================================
 
-// Version with parameter - for custom error messages
-void oled_show_error(const char *error_msg) {
+// NEW function with parameter - for custom error messages
+void oled_show_error_msg(const char *error_msg) {
     if (error_msg) {
         snprintf(line1_buf, sizeof(line1_buf), "✗ ERROR");
         snprintf(line2_buf, sizeof(line2_buf), "%s", error_msg);
@@ -132,7 +132,7 @@ void oled_show_error(const char *error_msg) {
     }
 }
 
-// Version without parameter - legacy support
+// LEGACY function without parameter - for old code
 void oled_show_error(void) {
     oled_show_message("✗ ERROR", "Check connection");
 }
@@ -153,7 +153,7 @@ void oled_show_led_sync(const char *state) {
     } else if (strcmp(state, "SUCCESS") == 0) {
         oled_show_pwnd_success();
     } else if (strcmp(state, "FAILED") == 0) {
-        oled_show_error("Exploit failed");
+        oled_show_error_msg("Exploit failed");
     } else {
         oled_show_message("STATE", state);
     }
