@@ -21,7 +21,11 @@ void oled_show_pwnd_success(void);
 void oled_show_done(void);
 void oled_show_unsupported(void);
 void oled_show_already_pwned(void);
-void oled_show_error(const char *error_msg);  // Keep only this one with parameter
+
+// Keep BOTH versions of oled_show_error
+void oled_show_error(const char *error_msg);  // With parameter
+void oled_show_error(void);                    // Without parameter (legacy)
+
 void oled_show_reboot_needed(void);
 void oled_show_led_sync(const char *state);
 void oled_show_device_info(const char *info);
@@ -36,11 +40,10 @@ void oled_show_failure_with_info(const char *info);
 void oled_show_reset(void);
 void oled_show_ready(void);
 
-// Legacy compatibility functions (remove duplicate oled_show_error)
+// Legacy compatibility functions
 void oled_show_status(bool connected);
 void oled_show_connecting(void);
 void oled_show_running(void);
-// void oled_show_error(void);  // REMOVE THIS DUPLICATE
 void oled_show_unsupported(void);
 void oled_show_already_pwned(void);
 
