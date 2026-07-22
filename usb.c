@@ -13,7 +13,7 @@ enum {
     USB_CMD_WAIT_FOR_DEVICE,
     USB_CMD_RESET_OPEN_EP0,
     USB_CMD_EXECUTE_FUNC,
-    USB_CMD_GET_VID_PID  // New command
+    USB_CMD_GET_VID_PID
 };
 
 static struct {
@@ -41,12 +41,7 @@ void usb_task(void) {
 
             case USB_CMD_WAIT_FOR_DEVICE: {
                 bus_wait_for_connect(&gBus);
-                // Extract VID/PID from connected device
-                if (gBus.root && gBus.root->device) {
-                    g_device_vid = gBus.root->device->vid;
-                    g_device_pid = gBus.root->device->pid;
-                    INFO("Device detected: VID=0x%04X, PID=0x%04X", g_device_vid, g_device_pid);
-                }
+                // Device is connected, we'll get VID/PID later
                 ret = 0;
                 break;
             }
@@ -155,7 +150,6 @@ bool is_device_supported(uint16_t vid, uint16_t pid) {
     // Apple devices supported by usbliter8
     if (vid == 0x05AC) { // Apple Vendor ID
         // A12 SoC (iPhone XS, XS Max, XR)
-        // iPhone XS: D321, iPhone XS Max: D331, iPhone XR: D211
         if (pid == 0x12A8 || pid == 0x12AA || pid == 0x12AB || pid == 0x12AC) {
             return true;
         }
@@ -164,7 +158,6 @@ bool is_device_supported(uint16_t vid, uint16_t pid) {
             return true;
         }
         // A13 SoC (iPhone 11, 11 Pro, 11 Pro Max)
-        // iPhone 11: D221, iPhone 11 Pro: D421, D411
         if (pid == 0x12B0 || pid == 0x12B2) {
             return true;
         }
@@ -197,12 +190,9 @@ bool usb_bus_wait_for_device_timeout(uint32_t timeout_ms) {
 }
 
 bool usb_is_device_pwned(void) {
-    // Check if device serial number contains "PWND" string
-    // This would be implemented based on your specific detection logic
-    // You need to read the device descriptor and check the serial number
-    
-    // For now, return false (not pwned)
-    // TODO: Implement actual check
+    // Check if device is already pwned
+    // This would require reading the device serial number
+    // For now, return false
     return false;
 }
 
