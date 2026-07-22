@@ -26,21 +26,24 @@
 #define CONNECTION_FAIL_SLEEP_MS    (500)
 
 __attribute__((noreturn))
-void fatal_failure(void) {
+void fatal_failure(const char *reason) {
     led_set_state(LED_STATE_ERROR);
-    oled_show_error_msg("Fatal error");
+    
+    if (reason) {
+        oled_show_error_msg(reason);
+        printf("FATAL ERROR: %s\n", reason);
+    } else {
+        oled_show_error_msg("Fatal error");
+        printf("FATAL ERROR: Unknown error\n");
+    }
 
 #if WITH_AUTO_REBOOT
-    printf("\nfatal failure, rebooting in %d seconds\n", FAILURE_REBOOT_DELAY_SEC);
-
+    printf("Rebooting in %d seconds...\n", FAILURE_REBOOT_DELAY_SEC);
     sleep_ms(FAILURE_REBOOT_DELAY_SEC * 1000);
-
     watchdog_reboot(0, SRAM_END, 1);
     while (1) {}
-
 #else
-    printf("\nfatal failure, spinning forever\n");
-
+    printf("Spinning forever...\n");
     while (1) {
         sleep_ms(100);
     }
@@ -55,15 +58,7 @@ void do_auto(void) {
 
         /*
          * This case means not even device descriptor
-         * could be queried
-         *
-         * On those boards with redundant resistor
-         * it could mean that device was not even
-         * connected yet
-         *
-         * So we sleep a bit, reset the bus and try again
-         *
-         * UPDATE: same behavior for already PWNED devices
+         * could be queried - no valid device detected
          */
         if (ret == -2) {
             oled_show_error_msg("No device");
@@ -77,19 +72,19 @@ void do_auto(void) {
             oled_show_already_pwned();
             sleep_ms(2000);
             oled_show_reboot_needed();
-            fatal_failure();
+            fatal_failure("Device already PWND");
         }
 
         /* Unsupported device */
         if (ret == -4) {
             oled_show_unsupported();
-            fatal_failure();
+            fatal_failure("Device not supported");
         }
 
         /* no-go failure, bailing */
         if (ret != 0) {
             oled_show_error_msg("Exploit failed");
-            fatal_failure();
+            fatal_failure("Exploit execution failed");
         }
 
         /* it all went well then */
@@ -98,16 +93,13 @@ void do_auto(void) {
     }
 
 #if WITH_AUTO_REBOOT
-    printf("\nsuccess, rebooting in %d seconds\n", SUCCESS_REBOOT_DELAY_SEC);
-
+    printf("Success! Rebooting in %d seconds...\n", SUCCESS_REBOOT_DELAY_SEC);
     sleep_ms(SUCCESS_REBOOT_DELAY_SEC * 1000);
-
     watchdog_reboot(0, SRAM_END, 1);
     while (1) {}
 #else
-    printf("\nsuccess, spinning forever\n");
+    printf("Success! Exploit completed successfully!\n");
     oled_show_done();
-
     while (1) {
         sleep_ms(100);
     }
@@ -153,19 +145,19 @@ void do_shell(void) {
                 int ret = exploit_run();
 
                 if (ret == -2) {
-                    printf("failed to discover a device\n");
+                    printf("No valid device detected\n");
                     oled_show_error_msg("No device");
                 } else if (ret == -3) {
-                    printf("device already pwned\n");
+                    printf("Device already pwned\n");
                     oled_show_already_pwned();
                 } else if (ret == -4) {
-                    printf("device not supported\n");
+                    printf("Device not supported\n");
                     oled_show_unsupported();
                 } else if (ret == 0) {
-                    printf("exploit successful!\n");
+                    printf("Exploit successful!\n");
                     oled_show_pwnd_success();
                 } else {
-                    printf("exploit failed with code: %d\n", ret);
+                    printf("Exploit failed with code: %d\n", ret);
                     oled_show_error_msg("Failed");
                 }
                 break;
@@ -231,6 +223,7 @@ int main(void) {
 #endif
 
     // Wait for DFU device
+    printf("Waiting for DFU device...\n");
     oled_show_waiting_dfu();
     
     usb_start();
@@ -243,16 +236,31 @@ int main(void) {
     uint16_t vid = usb_get_vid();
     uint16_t pid = usb_get_pid();
     
+    printf("Device detected: VID=0x%04X, PID=0x%04X\n", vid, pid);
     oled_show_device_found(vid, pid);
     sleep_ms(1000);
     
-    // Check if device is supported
-    if (!is_device_supported(vid, pid)) {
+    // Check if device is DFU mode (Apple DFU uses VID=0x5AC, PID=0x1227)
+    if (vid != 0x5AC || pid != 0x1227) {
+        printf("ERROR: Device is not in DFU mode!\n");
+        printf("Expected: VID=0x5AC (Apple), PID=0x1227 (DFU)\n");
+        printf("Got: VID=0x%04X, PID=0x%04X\n", vid, pid);
+        oled_show_message("ERROR:", "Device not in DFU");
+        sleep_ms(2000);
         oled_show_unsupported_device(vid, pid);
-        printf("Unsupported device: VID=0x%04X, PID=0x%04X\n", vid, pid);
-        fatal_failure();
+        fatal_failure("Device not in DFU mode");
     }
     
+    // Check if device CPU is supported
+    if (!is_device_supported(vid, pid)) {
+        printf("ERROR: Device is not supported!\n");
+        printf("Only A12, S4/S5, and A13 devices are supported.\n");
+        oled_show_unsupported();
+        sleep_ms(2000);
+        fatal_failure("CPU not supported");
+    }
+    
+    printf("Device is supported - proceeding with exploit\n");
     oled_show_device_detected();
     sleep_ms(500);
 
