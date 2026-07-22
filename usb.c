@@ -10,7 +10,8 @@ enum {
     USB_CMD_BUS_INIT = 0,
     USB_CMD_WAIT_FOR_DEVICE,
     USB_CMD_RESET_OPEN_EP0,
-    USB_CMD_EXECUTE_FUNC
+    USB_CMD_EXECUTE_FUNC,
+    USB_CMD_GET_VID_PID  // New command
 };
 
 static struct {
@@ -19,6 +20,10 @@ static struct {
 } usb_exec_ctx;
 
 static bus_t gBus = { 0 };
+
+// Store device VID/PID
+static uint16_t g_device_vid = 0;
+static uint16_t g_device_pid = 0;
 
 void usb_task(void) {
     while (1) {
@@ -34,6 +39,12 @@ void usb_task(void) {
 
             case USB_CMD_WAIT_FOR_DEVICE: {
                 bus_wait_for_connect(&gBus);
+                // Extract VID/PID from connected device
+                if (gBus.root && gBus.root->device) {
+                    g_device_vid = gBus.root->device->vid;
+                    g_device_pid = gBus.root->device->pid;
+                    INFO("Device detected: VID=0x%04X, PID=0x%04X", g_device_vid, g_device_pid);
+                }
                 ret = 0;
                 break;
             }
@@ -46,6 +57,12 @@ void usb_task(void) {
 
             case USB_CMD_EXECUTE_FUNC: {
                 ret = usb_exec_ctx.func(&gBus, usb_exec_ctx.ctx);
+                break;
+            }
+
+            case USB_CMD_GET_VID_PID: {
+                // Return VID in high 16 bits, PID in low 16 bits
+                ret = ((uint32_t)g_device_vid << 16) | g_device_pid;
                 break;
             }
         }
@@ -106,4 +123,72 @@ int usb_bus_execute(usb_executee_t func, void *ctx, uint64_t timeout) {
     usb_exec_ctx.ctx = ctx;
 
     return _usb_task_execute_cmd(USB_CMD_EXECUTE_FUNC, timeout);
+}
+
+// ============================================
+// New functions for VID/PID and device support
+// ============================================
+
+uint16_t usb_get_vid(void) {
+    // Try to get VID/PID from the bus
+    uint32_t result = _usb_task_execute_cmd(USB_CMD_GET_VID_PID, DEFAULT_TIMEOUT_US);
+    if (result != (uint32_t)-1) {
+        g_device_vid = (result >> 16) & 0xFFFF;
+        g_device_pid = result & 0xFFFF;
+    }
+    return g_device_vid;
+}
+
+uint16_t usb_get_pid(void) {
+    // Try to get VID/PID from the bus
+    uint32_t result = _usb_task_execute_cmd(USB_CMD_GET_VID_PID, DEFAULT_TIMEOUT_US);
+    if (result != (uint32_t)-1) {
+        g_device_vid = (result >> 16) & 0xFFFF;
+        g_device_pid = result & 0xFFFF;
+    }
+    return g_device_pid;
+}
+
+bool is_device_supported(uint16_t vid, uint16_t pid) {
+    // Apple devices supported by usbliter8
+    if (vid == 0x05AC) { // Apple Vendor ID
+        // A12 SoC (iPhone XS, XS Max, XR)
+        // iPhone XS: D321, iPhone XS Max: D331, iPhone XR: D211
+        if (pid == 0x12A8 || pid == 0x12AA || pid == 0x12AB || pid == 0x12AC) {
+            return true;
+        }
+        // S4/S5 (Apple Watch Series 4 & 5)
+        if (pid == 0x12A0 || pid == 0x12A2) {
+            return true;
+        }
+        // A13 SoC (iPhone 11, 11 Pro, 11 Pro Max)
+        // iPhone 11: D221, iPhone 11 Pro: D321? Actually D421, D411
+        if (pid == 0x12B0 || pid == 0x12B2) {
+            return true;
+        }
+        // A12X/Z (iPad Pro 2018) - theoretically supported but not implemented
+        // if (pid == 0x12A4 || pid == 0x12A6) {
+        //     return true;
+        // }
+    }
+    return false;
+}
+
+bool usb_bus_wait_for_device_timeout(uint32_t timeout_ms) {
+    uint32_t start = time_us_32();
+    while (time_us_32() - start < timeout_ms * 1000) {
+        if (usb_bus_wait_for_device() == 0) {
+            return true;
+        }
+        sleep_ms(10);
+    }
+    return false;
+}
+
+// Function to check if device is already pwned
+bool usb_is_device_pwned(void) {
+    // Check if device serial number contains "PWND" string
+    // This would be implemented based on your specific detection logic
+    // For now, return false
+    return false;
 }
