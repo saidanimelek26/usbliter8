@@ -109,19 +109,11 @@ void oled_show_done(void) {
     oled_show_message("✓ DONE", "Process complete");
 }
 
-void oled_show_unsupported(void) {
-    oled_show_message("UNSUPPORTED", "Device not supported");
-}
-
-void oled_show_already_pwned(void) {
-    oled_show_message("ALREADY PWND", "Device is pwned");
-}
-
 // ============================================
-// Error functions with DIFFERENT names
+// Error functions
 // ============================================
 
-// NEW function with parameter - for custom error messages
+// For custom error messages with parameter
 void oled_show_error_msg(const char *error_msg) {
     if (error_msg) {
         snprintf(line1_buf, sizeof(line1_buf), "✗ ERROR");
@@ -132,9 +124,21 @@ void oled_show_error_msg(const char *error_msg) {
     }
 }
 
-// LEGACY function without parameter - for old code
+// Legacy error function without parameter
 void oled_show_error(void) {
     oled_show_message("✗ ERROR", "Check connection");
+}
+
+// ============================================
+// Status functions
+// ============================================
+
+void oled_show_unsupported(void) {
+    oled_show_message("UNSUPPORTED", "Device not supported");
+}
+
+void oled_show_already_pwned(void) {
+    oled_show_message("ALREADY PWND", "Device is pwned");
 }
 
 void oled_show_reboot_needed(void) {
@@ -220,17 +224,9 @@ void oled_show_status(bool connected) {
 }
 
 void oled_show_connecting(void) {
-    oled_show_booting();  // Reuse new function
+    oled_show_booting();
 }
 
 void oled_show_running(void) {
-    oled_show_exploiting();  // Reuse new function
-}
-
-void oled_show_unsupported(void) {
-    oled_show_unsupported();
-}
-
-void oled_show_already_pwned(void) {
-    oled_show_already_pwned();
+    oled_show_exploiting();
 }
