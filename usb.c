@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "pico/multicore.h"
 #include "pico/time.h"
@@ -26,6 +27,50 @@ static bus_t gBus = { 0 };
 // Store device VID/PID
 static uint16_t g_device_vid = 0;
 static uint16_t g_device_pid = 0;
+static bool g_device_connected = false;
+
+// USB Device Descriptor structure
+struct usb_device_descriptor {
+    uint8_t  bLength;
+    uint8_t  bDescriptorType;
+    uint16_t bcdUSB;
+    uint8_t  bDeviceClass;
+    uint8_t  bDeviceSubClass;
+    uint8_t  bDeviceProtocol;
+    uint8_t  bMaxPacketSize;
+    uint16_t idVendor;
+    uint16_t idProduct;
+    uint16_t bcdDevice;
+    uint8_t  iManufacturer;
+    uint8_t  iProduct;
+    uint8_t  iSerialNumber;
+    uint8_t  bNumConfigurations;
+} __attribute__((packed));
+
+// Helper function to get device descriptor
+static bool _get_device_descriptor(bus_t *b, struct usb_device_descriptor *desc) {
+    if (!b || !b->dev || !desc) {
+        return false;
+    }
+    
+    // Try to read device descriptor from the connected device
+    struct usb_setup_req_header {
+        uint8_t  bmRequestType;
+        uint8_t  bRequest;
+        uint16_t wValue;
+        uint16_t wIndex;
+        uint16_t wLength;
+    } __attribute__((packed)) req = {
+        .bmRequestType = 0x80,  // Device to Host
+        .bRequest = 0x06,       // GET_DESCRIPTOR
+        .wValue = 0x0100,       // Device descriptor
+        .wIndex = 0x0000,
+        .wLength = sizeof(struct usb_device_descriptor)
+    };
+    
+    int rc = bus_control_xfer(b, (uint8_t *)&req, (uint8_t *)desc, sizeof(*desc), true, 100);
+    return (rc == sizeof(*desc));
+}
 
 void usb_task(void) {
     while (1) {
@@ -35,13 +80,25 @@ void usb_task(void) {
         switch (cmd) {
             case USB_CMD_BUS_INIT: {
                 bus_init(&gBus, false);
+                g_device_connected = false;
                 ret = 0;
                 break;
             }
 
             case USB_CMD_WAIT_FOR_DEVICE: {
                 bus_wait_for_connect(&gBus);
-                // Device is connected, we'll get VID/PID later
+                g_device_connected = true;
+                
+                // Try to get VID/PID from device descriptor
+                struct usb_device_descriptor desc = {0};
+                if (_get_device_descriptor(&gBus, &desc)) {
+                    g_device_vid = desc.idVendor;
+                    g_device_pid = desc.idProduct;
+                    INFO("Device VID=0x%04X, PID=0x%04X", g_device_vid, g_device_pid);
+                } else {
+                    INFO("Failed to read device descriptor");
+                }
+                
                 ret = 0;
                 break;
             }
@@ -59,7 +116,11 @@ void usb_task(void) {
 
             case USB_CMD_GET_VID_PID: {
                 // Return VID in high 16 bits, PID in low 16 bits
-                ret = ((uint32_t)g_device_vid << 16) | g_device_pid;
+                if (g_device_connected && g_device_vid != 0) {
+                    ret = ((uint32_t)g_device_vid << 16) | g_device_pid;
+                } else {
+                    ret = (uint32_t)-1;
+                }
                 break;
             }
         }
@@ -80,7 +141,7 @@ int _usb_task_execute_cmd(int cmd, uint64_t timeout) {
 
     if (timeout) {
         if (!multicore_fifo_pop_timeout_us(timeout, &out)) {
-            INFO("TIMEOUT");
+            INFO("USB command timeout");
         }
     } else {
         out = multicore_fifo_pop_blocking();
@@ -123,59 +184,52 @@ int usb_bus_execute(usb_executee_t func, void *ctx, uint64_t timeout) {
 }
 
 // ============================================
-// New functions for OLED display and device info
+// Device information functions for OLED display
 // ============================================
 
 uint16_t usb_get_vid(void) {
-    // Try to get VID/PID from the bus
-    uint32_t result = _usb_task_execute_cmd(USB_CMD_GET_VID_PID, DEFAULT_TIMEOUT_US);
-    if (result != (uint32_t)-1) {
-        g_device_vid = (result >> 16) & 0xFFFF;
-        g_device_pid = result & 0xFFFF;
+    if (g_device_connected && g_device_vid == 0) {
+        // Try to get VID/PID from the bus if not already set
+        uint32_t result = _usb_task_execute_cmd(USB_CMD_GET_VID_PID, DEFAULT_TIMEOUT_US);
+        if (result != (uint32_t)-1) {
+            g_device_vid = (result >> 16) & 0xFFFF;
+            g_device_pid = result & 0xFFFF;
+        }
     }
     return g_device_vid;
 }
 
 uint16_t usb_get_pid(void) {
-    // Try to get VID/PID from the bus
-    uint32_t result = _usb_task_execute_cmd(USB_CMD_GET_VID_PID, DEFAULT_TIMEOUT_US);
-    if (result != (uint32_t)-1) {
-        g_device_vid = (result >> 16) & 0xFFFF;
-        g_device_pid = result & 0xFFFF;
+    if (g_device_connected && g_device_pid == 0) {
+        // Try to get VID/PID from the bus if not already set
+        uint32_t result = _usb_task_execute_cmd(USB_CMD_GET_VID_PID, DEFAULT_TIMEOUT_US);
+        if (result != (uint32_t)-1) {
+            g_device_vid = (result >> 16) & 0xFFFF;
+            g_device_pid = result & 0xFFFF;
+        }
     }
     return g_device_pid;
 }
 
 bool is_device_supported(uint16_t vid, uint16_t pid) {
-    // Apple devices supported by usbliter8
-    if (vid == 0x05AC) { // Apple Vendor ID
-        // A12 SoC (iPhone XS, XS Max, XR)
-        if (pid == 0x12A8 || pid == 0x12AA || pid == 0x12AB || pid == 0x12AC) {
-            return true;
-        }
-        // S4/S5 (Apple Watch Series 4 & 5)
-        if (pid == 0x12A0 || pid == 0x12A2) {
-            return true;
-        }
-        // A13 SoC (iPhone 11, 11 Pro, 11 Pro Max)
-        if (pid == 0x12B0 || pid == 0x12B2) {
-            return true;
-        }
-        // A12X/Z (iPad Pro 2018) - theoretically supported but not implemented
-        // if (pid == 0x12A4 || pid == 0x12A6) {
-        //     return true;
-        // }
+    // Must be in DFU mode (Apple DFU)
+    if (vid != 0x05AC || pid != 0x1227) {
+        INFO("Device not in DFU mode: VID=0x%04X, PID=0x%04X", vid, pid);
+        return false;
     }
-    return false;
+    
+    // If we get here, device is in proper DFU mode
+    // The actual device support (A12, A13, S4, S5) will be verified
+    // by examining the CPID in exploit.c
+    INFO("Device is in DFU mode - support will be verified during exploit");
+    return true;
 }
 
 bool usb_bus_wait_for_device_timeout(uint32_t timeout_ms) {
     uint32_t start = time_us_32();
     while (time_us_32() - start < timeout_ms * 1000) {
-        // Try to get device
-        int ret = _usb_task_execute_cmd(USB_CMD_WAIT_FOR_DEVICE, 100 * 1000); // 100ms timeout per attempt
+        int ret = _usb_task_execute_cmd(USB_CMD_WAIT_FOR_DEVICE, 100 * 1000);
         if (ret == 0) {
-            // Get VID/PID
             uint32_t result = _usb_task_execute_cmd(USB_CMD_GET_VID_PID, DEFAULT_TIMEOUT_US);
             if (result != (uint32_t)-1) {
                 g_device_vid = (result >> 16) & 0xFFFF;
@@ -190,7 +244,7 @@ bool usb_bus_wait_for_device_timeout(uint32_t timeout_ms) {
 }
 
 bool usb_is_device_pwned(void) {
-    // Check if device is already pwned
+    // Check if device is already pwned by examining serial number
     // This would require reading the device serial number
     // For now, return false
     return false;
@@ -204,6 +258,7 @@ void usb_get_device_info_string(uint16_t vid, uint16_t pid, char *buf, size_t bu
 const char* usb_get_device_name(uint16_t vid, uint16_t pid) {
     if (vid == 0x05AC) { // Apple
         switch (pid) {
+            case 0x1227: return "Apple Device (DFU)";
             case 0x12A8: return "iPhone XS";
             case 0x12AA: return "iPhone XS Max";
             case 0x12AB: return "iPhone XR";
