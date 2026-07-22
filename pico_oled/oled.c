@@ -4,6 +4,7 @@
 #include "ssd1306.h"
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 static i2c_inst_t *oled_i2c = NULL;
 static bool oled_ready = false;
@@ -61,14 +62,28 @@ void oled_show_message(const char *line1, const char *line2) {
     
     ssd1306_clear();
     
+    // Convert to uppercase for better compatibility
+    char line1_upper[21] = {0};
+    char line2_upper[21] = {0};
+    
     // Draw line 1 at y=0
     if (line1) {
-        ssd1306_draw_text(0, 0, line1);
+        int i = 0;
+        for (const char *p = line1; *p && i < 20; p++, i++) {
+            line1_upper[i] = toupper((unsigned char)*p);
+        }
+        line1_upper[i] = '\0';
+        ssd1306_draw_text(0, 0, line1_upper);
     }
     
     // Draw line 2 at y=16 (2nd page)
     if (line2) {
-        ssd1306_draw_text(0, 16, line2);
+        int i = 0;
+        for (const char *p = line2; *p && i < 20; p++, i++) {
+            line2_upper[i] = toupper((unsigned char)*p);
+        }
+        line2_upper[i] = '\0';
+        ssd1306_draw_text(0, 16, line2_upper);
     }
     
     ssd1306_update();
@@ -99,14 +114,14 @@ void oled_show_device_found(uint16_t vid, uint16_t pid) {
 }
 
 void oled_show_exploiting(void) {
-    oled_show_message("EXPLOITING", "Please wait...");
+    oled_show_message("EXPLOITING", "Please wait");
 }
 
 void oled_show_exploit_progress(uint8_t percent) {
     if (!oled_ready) return;
     if (percent > 100) percent = 100;
     
-    snprintf(line1_buf, sizeof(line1_buf), "Progress: %3d%%", percent);
+    snprintf(line1_buf, sizeof(line1_buf), "PROGRESS %3d%%", percent);
     
     // Progress bar (12 characters wide for display)
     char progress[13] = {0};
@@ -125,12 +140,12 @@ void oled_show_exploit_progress(uint8_t percent) {
 
 void oled_show_stage(const char *stage) {
     if (!stage) return;
-    snprintf(line1_buf, sizeof(line1_buf), "Stage: %s", stage);
+    snprintf(line1_buf, sizeof(line1_buf), "STAGE: %s", stage);
     oled_show_message(line1_buf, "Running...");
 }
 
 void oled_show_pwnd_success(void) {
-    oled_show_message("SUCCESS!", "Device PWND!");
+    oled_show_message("SUCCESS!", "DEVICE PWND!");
 }
 
 void oled_show_done(void) {
@@ -145,16 +160,16 @@ void oled_show_error_msg(const char *error_msg) {
     if (!oled_ready) return;
     
     if (error_msg) {
-        snprintf(line1_buf, sizeof(line1_buf), "ERROR");
+        snprintf(line1_buf, sizeof(line1_buf), "ERROR!");
         snprintf(line2_buf, sizeof(line2_buf), "%s", error_msg);
         oled_show_message(line1_buf, line2_buf);
     } else {
-        oled_show_message("ERROR", "Check connection");
+        oled_show_message("ERROR!", "Check connection");
     }
 }
 
 void oled_show_error(void) {
-    oled_show_message("ERROR", "Check setup");
+    oled_show_message("ERROR!", "Check setup");
 }
 
 // ============================================
@@ -166,7 +181,7 @@ void oled_show_unsupported(void) {
 }
 
 void oled_show_already_pwned(void) {
-    oled_show_message("ALREADY PWND", "Device pwned");
+    oled_show_message("ALREADY PWND", "Reboot needed");
 }
 
 void oled_show_reboot_needed(void) {
@@ -216,7 +231,7 @@ void oled_show_unsupported_device(uint16_t vid, uint16_t pid) {
 
 void oled_show_exploit_stage(uint8_t stage_num, const char *stage_name) {
     if (!stage_name) return;
-    snprintf(line1_buf, sizeof(line1_buf), "Stage %d/5", stage_num);
+    snprintf(line1_buf, sizeof(line1_buf), "STAGE %d/5", stage_num);
     snprintf(line2_buf, sizeof(line2_buf), "%s", stage_name);
     oled_show_message(line1_buf, line2_buf);
 }
@@ -253,14 +268,14 @@ void oled_show_status(bool connected) {
     if (!oled_ready) return;
     
     if (connected) {
-        oled_show_message("Phone:", "Connected");
+        oled_show_message("PHONE:", "CONNECTED");
     } else {
-        oled_show_message("Phone:", "Disconnected");
+        oled_show_message("PHONE:", "DISCONNECTED");
     }
 }
 
 void oled_show_connecting(void) {
-    oled_show_message("CONNECTING", "Please wait...");
+    oled_show_message("CONNECTING", "Please wait");
 }
 
 void oled_show_running(void) {
