@@ -28,6 +28,7 @@
 __attribute__((noreturn))
 void fatal_failure(void) {
     led_set_state(LED_STATE_ERROR);
+    oled_show_error("Fatal error");
 
 #if WITH_AUTO_REBOOT
     printf("\nfatal failure, rebooting in %d seconds\n", FAILURE_REBOOT_DELAY_SEC);
@@ -49,6 +50,7 @@ void fatal_failure(void) {
 __attribute__((noreturn))
 void do_auto(void) {
     while (true) {
+        oled_show_exploiting();
         int ret = exploit_run();
 
         /*
@@ -64,19 +66,34 @@ void do_auto(void) {
          * UPDATE: same behavior for already PWNED devices
          */
         if (ret == -2) {
-            oled_show_status(false);
+            oled_show_error("No device");
             sleep_ms(CONNECTION_FAIL_SLEEP_MS);
             usb_bus_reset_open_ep0();
             continue;
         }
 
+        /* Device already pwned */
+        if (ret == -3) {
+            oled_show_already_pwned();
+            sleep_ms(2000);
+            oled_show_reboot_needed();
+            fatal_failure();
+        }
+
+        /* Unsupported device */
+        if (ret == -4) {
+            oled_show_unsupported();
+            fatal_failure();
+        }
+
         /* no-go failure, bailing */
         if (ret != 0) {
+            oled_show_error("Exploit failed");
             fatal_failure();
         }
 
         /* it all went well then */
-        oled_show_status(true);
+        oled_show_pwnd_success();
         break;
     }
 
@@ -89,6 +106,7 @@ void do_auto(void) {
     while (1) {}
 #else
     printf("\nsuccess, spinning forever\n");
+    oled_show_done();
 
     while (1) {
         sleep_ms(100);
@@ -125,23 +143,37 @@ void do_shell(void) {
             case 'r': {
                 printf("Resetting the bus...\n");
                 usb_bus_reset_open_ep0();
+                oled_show_reset();
                 break;
             }
 
             case 'e': {
                 usb_bus_reset_open_ep0();
+                oled_show_exploiting();
                 int ret = exploit_run();
 
                 if (ret == -2) {
                     printf("failed to discover a device\n");
+                    oled_show_error("No device");
+                } else if (ret == -3) {
+                    printf("device already pwned\n");
+                    oled_show_already_pwned();
+                } else if (ret == -4) {
+                    printf("device not supported\n");
+                    oled_show_unsupported();
+                } else if (ret == 0) {
+                    printf("exploit successful!\n");
+                    oled_show_pwnd_success();
+                } else {
+                    printf("exploit failed with code: %d\n", ret);
+                    oled_show_error("Failed");
                 }
-
                 break;
             }
 
             case 'p': {
                 printf("Rebooting the Pico...\n");
-
+                oled_show_reboot_needed();
                 sleep_ms(100);
                 watchdog_reboot(0, SRAM_END, 1);
                 while (1) {}
@@ -185,7 +217,7 @@ int main(void) {
 
     // Initialize OLED (SDA=GPIO4, SCL=GPIO5)
     oled_init_i2c(i2c0, 4, 5);
-    oled_show_connecting();
+    oled_show_booting();  // "usbliter8 - Booting..."
 
     printf("\n============ %s v%s ============\n", PICO_PROGRAM_NAME, PICO_PROGRAM_VERSION_STRING);
     printf("built for %s, PIO USB @ GP%d/%d (D+/D-)\n\n", BOARD_NAME, PIO_USB_DP_PIN_DEFAULT, PIO_USB_DP_PIN_DEFAULT + 1);
@@ -198,12 +230,31 @@ int main(void) {
     printf("\n");
 #endif
 
+    // Wait for DFU device
+    oled_show_waiting_dfu();  // "WAITING DFU - Connect device"
+    
     usb_start();
     usb_bus_init();
+    
+    oled_show_waiting_for_device();  // "SEARCHING - For DFU device"
     usb_bus_wait_for_device();
 
-    // Device detected
-    oled_show_status(true);
+    // Device detected - get info
+    uint16_t vid = usb_get_vid();
+    uint16_t pid = usb_get_pid();
+    
+    oled_show_device_found(vid, pid);  // "VID:0x05AC - PID:0x12A8"
+    sleep_ms(1000);
+    
+    // Check if device is supported
+    if (!is_device_supported(vid, pid)) {
+        oled_show_unsupported_device(vid, pid);
+        printf("Unsupported device: VID=0x%04X, PID=0x%04X\n", vid, pid);
+        fatal_failure();
+    }
+    
+    oled_show_device_detected();  // "DEVICE FOUND - Checking support..."
+    sleep_ms(500);
 
     usb_bus_reset_open_ep0();
 
