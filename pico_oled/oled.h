@@ -19,13 +19,14 @@ void oled_show_exploit_progress(uint8_t percent);
 void oled_show_stage(const char *stage);
 void oled_show_pwnd_success(void);
 void oled_show_done(void);
+
+// Error functions - DIFFERENT NAMES to avoid conflicts
+void oled_show_error_msg(const char *error_msg);  // With parameter - for new code
+void oled_show_error(void);                        // Without parameter - for legacy
+
+// Status functions
 void oled_show_unsupported(void);
 void oled_show_already_pwned(void);
-
-// Error functions with DIFFERENT names
-void oled_show_error_msg(const char *error_msg);  // With parameter - FOR NEW CODE
-void oled_show_error(void);                        // Without parameter - FOR LEGACY
-
 void oled_show_reboot_needed(void);
 void oled_show_led_sync(const char *state);
 void oled_show_device_info(const char *info);
@@ -44,7 +45,5 @@ void oled_show_ready(void);
 void oled_show_status(bool connected);
 void oled_show_connecting(void);
 void oled_show_running(void);
-void oled_show_unsupported(void);
-void oled_show_already_pwned(void);
 
 #endif // OLED_H
