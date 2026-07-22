@@ -28,7 +28,7 @@
 __attribute__((noreturn))
 void fatal_failure(void) {
     led_set_state(LED_STATE_ERROR);
-    oled_show_error("Fatal error");
+    oled_show_error_msg("Fatal error");  // CHANGED: use oled_show_error_msg
 
 #if WITH_AUTO_REBOOT
     printf("\nfatal failure, rebooting in %d seconds\n", FAILURE_REBOOT_DELAY_SEC);
@@ -66,7 +66,7 @@ void do_auto(void) {
          * UPDATE: same behavior for already PWNED devices
          */
         if (ret == -2) {
-            oled_show_error("No device");
+            oled_show_error_msg("No device");  // CHANGED: use oled_show_error_msg
             sleep_ms(CONNECTION_FAIL_SLEEP_MS);
             usb_bus_reset_open_ep0();
             continue;
@@ -88,7 +88,7 @@ void do_auto(void) {
 
         /* no-go failure, bailing */
         if (ret != 0) {
-            oled_show_error("Exploit failed");
+            oled_show_error_msg("Exploit failed");  // CHANGED: use oled_show_error_msg
             fatal_failure();
         }
 
@@ -154,7 +154,7 @@ void do_shell(void) {
 
                 if (ret == -2) {
                     printf("failed to discover a device\n");
-                    oled_show_error("No device");
+                    oled_show_error_msg("No device");  // CHANGED: use oled_show_error_msg
                 } else if (ret == -3) {
                     printf("device already pwned\n");
                     oled_show_already_pwned();
@@ -166,7 +166,7 @@ void do_shell(void) {
                     oled_show_pwnd_success();
                 } else {
                     printf("exploit failed with code: %d\n", ret);
-                    oled_show_error("Failed");
+                    oled_show_error_msg("Failed");  // CHANGED: use oled_show_error_msg
                 }
                 break;
             }
@@ -217,7 +217,7 @@ int main(void) {
 
     // Initialize OLED (SDA=GPIO4, SCL=GPIO5)
     oled_init_i2c(i2c0, 4, 5);
-    oled_show_booting();  // "usbliter8 - Booting..."
+    oled_show_booting();
 
     printf("\n============ %s v%s ============\n", PICO_PROGRAM_NAME, PICO_PROGRAM_VERSION_STRING);
     printf("built for %s, PIO USB @ GP%d/%d (D+/D-)\n\n", BOARD_NAME, PIO_USB_DP_PIN_DEFAULT, PIO_USB_DP_PIN_DEFAULT + 1);
@@ -231,19 +231,19 @@ int main(void) {
 #endif
 
     // Wait for DFU device
-    oled_show_waiting_dfu();  // "WAITING DFU - Connect device"
+    oled_show_waiting_dfu();
     
     usb_start();
     usb_bus_init();
     
-    oled_show_waiting_for_device();  // "SEARCHING - For DFU device"
+    oled_show_waiting_for_device();
     usb_bus_wait_for_device();
 
     // Device detected - get info
     uint16_t vid = usb_get_vid();
     uint16_t pid = usb_get_pid();
     
-    oled_show_device_found(vid, pid);  // "VID:0x05AC - PID:0x12A8"
+    oled_show_device_found(vid, pid);
     sleep_ms(1000);
     
     // Check if device is supported
@@ -253,7 +253,7 @@ int main(void) {
         fatal_failure();
     }
     
-    oled_show_device_detected();  // "DEVICE FOUND - Checking support..."
+    oled_show_device_detected();
     sleep_ms(500);
 
     usb_bus_reset_open_ep0();
