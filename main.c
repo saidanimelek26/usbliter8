@@ -28,7 +28,7 @@
 __attribute__((noreturn))
 void fatal_failure(void) {
     led_set_state(LED_STATE_ERROR);
-    oled_show_error_msg("Fatal error");  // CHANGED: use oled_show_error_msg
+    oled_show_error_msg("Fatal error");
 
 #if WITH_AUTO_REBOOT
     printf("\nfatal failure, rebooting in %d seconds\n", FAILURE_REBOOT_DELAY_SEC);
@@ -66,7 +66,7 @@ void do_auto(void) {
          * UPDATE: same behavior for already PWNED devices
          */
         if (ret == -2) {
-            oled_show_error_msg("No device");  // CHANGED: use oled_show_error_msg
+            oled_show_error_msg("No device");
             sleep_ms(CONNECTION_FAIL_SLEEP_MS);
             usb_bus_reset_open_ep0();
             continue;
@@ -88,7 +88,7 @@ void do_auto(void) {
 
         /* no-go failure, bailing */
         if (ret != 0) {
-            oled_show_error_msg("Exploit failed");  // CHANGED: use oled_show_error_msg
+            oled_show_error_msg("Exploit failed");
             fatal_failure();
         }
 
@@ -154,7 +154,7 @@ void do_shell(void) {
 
                 if (ret == -2) {
                     printf("failed to discover a device\n");
-                    oled_show_error_msg("No device");  // CHANGED: use oled_show_error_msg
+                    oled_show_error_msg("No device");
                 } else if (ret == -3) {
                     printf("device already pwned\n");
                     oled_show_already_pwned();
@@ -166,7 +166,7 @@ void do_shell(void) {
                     oled_show_pwnd_success();
                 } else {
                     printf("exploit failed with code: %d\n", ret);
-                    oled_show_error_msg("Failed");  // CHANGED: use oled_show_error_msg
+                    oled_show_error_msg("Failed");
                 }
                 break;
             }
