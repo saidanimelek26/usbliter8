@@ -15,8 +15,8 @@ static char line2_buf[21];
 // ============================================
 
 void oled_init_i2c(i2c_inst_t *i2c, uint gpio_sda, uint gpio_scl) {
-    // Initialize I2C with higher speed for better reliability
-    const uint baud = 400000;  // Increased from 100000 to 400000
+    // Initialize I2C for SH1106 display
+    const uint baud = 400000;  // Standard I2C speed
     i2c_init(i2c, baud);
     gpio_set_function(gpio_sda, GPIO_FUNC_I2C);
     gpio_set_function(gpio_scl, GPIO_FUNC_I2C);
@@ -25,46 +25,48 @@ void oled_init_i2c(i2c_inst_t *i2c, uint gpio_sda, uint gpio_scl) {
 
     oled_i2c = i2c;
     
-    // Try multiple times to initialize
+    // Try multiple times to initialize SH1106
     bool init_success = false;
-    for (int i = 0; i < 3; i++) {
+    for (int attempt = 0; attempt < 3; attempt++) {
         if (ssd1306_init_i2c(oled_i2c, 0x3C)) {
             init_success = true;
             break;
         }
-        sleep_ms(10);
+        sleep_ms(50);
     }
     
     if (!init_success) {
         oled_ready = false;
+        printf("OLED initialization FAILED\n");
         return;
     }
     
     // Clear display and update
     ssd1306_clear();
     ssd1306_update();
-    sleep_ms(50);
+    sleep_ms(100);
     
     oled_ready = true;
+    printf("OLED initialized successfully\n");
     
-    // Test display with a simple message
-    oled_show_message("OLED", "Ready");
+    // Test display with initialization message
+    oled_show_message("usbliter8", "Ready");
     sleep_ms(500);
 }
 
 void oled_show_message(const char *line1, const char *line2) {
     if (!oled_ready) {
-        // Try to reinitialize if not ready
         return;
     }
     
     ssd1306_clear();
     
-    // Draw with larger font for better visibility
+    // Draw line 1 at y=0
     if (line1) {
         ssd1306_draw_text(0, 0, line1);
     }
     
+    // Draw line 2 at y=16 (2nd page)
     if (line2) {
         ssd1306_draw_text(0, 16, line2);
     }
@@ -97,41 +99,42 @@ void oled_show_device_found(uint16_t vid, uint16_t pid) {
 }
 
 void oled_show_exploiting(void) {
-    oled_show_message("EXPLOITING...", "Please wait");
+    oled_show_message("EXPLOITING", "Please wait...");
 }
 
 void oled_show_exploit_progress(uint8_t percent) {
     if (!oled_ready) return;
     if (percent > 100) percent = 100;
     
-    snprintf(line1_buf, sizeof(line1_buf), "EXPLOIT %d%%", percent);
+    snprintf(line1_buf, sizeof(line1_buf), "Progress: %3d%%", percent);
     
-    // Progress bar (16 characters wide)
-    char progress[17] = {0};
-    uint8_t bars = (percent * 16) / 100;
-    for (uint8_t i = 0; i < bars && i < 16; i++) {
+    // Progress bar (12 characters wide for display)
+    char progress[13] = {0};
+    uint8_t bars = (percent * 12) / 100;
+    for (uint8_t i = 0; i < bars && i < 12; i++) {
         progress[i] = '=';
     }
-    if (percent < 100 && bars < 16) {
+    if (percent < 100 && bars < 12) {
         progress[bars] = '>';
     }
-    progress[16] = '\0';
+    progress[12] = '\0';
     
     snprintf(line2_buf, sizeof(line2_buf), "[%s]", progress);
     oled_show_message(line1_buf, line2_buf);
 }
 
 void oled_show_stage(const char *stage) {
-    snprintf(line1_buf, sizeof(line1_buf), "STAGE: %s", stage);
-    oled_show_message(line1_buf, "Exploiting...");
+    if (!stage) return;
+    snprintf(line1_buf, sizeof(line1_buf), "Stage: %s", stage);
+    oled_show_message(line1_buf, "Running...");
 }
 
 void oled_show_pwnd_success(void) {
-    oled_show_message("PWND!", "Exploit successful");
+    oled_show_message("SUCCESS!", "Device PWND!");
 }
 
 void oled_show_done(void) {
-    oled_show_message("DONE", "Process complete");
+    oled_show_message("COMPLETE", "Ready for next");
 }
 
 // ============================================
@@ -139,6 +142,8 @@ void oled_show_done(void) {
 // ============================================
 
 void oled_show_error_msg(const char *error_msg) {
+    if (!oled_ready) return;
+    
     if (error_msg) {
         snprintf(line1_buf, sizeof(line1_buf), "ERROR");
         snprintf(line2_buf, sizeof(line2_buf), "%s", error_msg);
@@ -149,7 +154,7 @@ void oled_show_error_msg(const char *error_msg) {
 }
 
 void oled_show_error(void) {
-    oled_show_message("ERROR", "Check connection");
+    oled_show_message("ERROR", "Check setup");
 }
 
 // ============================================
@@ -157,15 +162,15 @@ void oled_show_error(void) {
 // ============================================
 
 void oled_show_unsupported(void) {
-    oled_show_message("UNSUPPORTED", "Device not supported");
+    oled_show_message("UNSUPPORTED", "Not supported");
 }
 
 void oled_show_already_pwned(void) {
-    oled_show_message("ALREADY PWND", "Device is pwned");
+    oled_show_message("ALREADY PWND", "Device pwned");
 }
 
 void oled_show_reboot_needed(void) {
-    oled_show_message("REBOOT NEEDED", "Restart Pico");
+    oled_show_message("REBOOT NEEDED", "Restart device");
 }
 
 void oled_show_led_sync(const char *state) {
@@ -187,6 +192,7 @@ void oled_show_led_sync(const char *state) {
 }
 
 void oled_show_device_info(const char *info) {
+    if (!info) return;
     oled_show_message("DEVICE INFO", info);
 }
 
@@ -195,30 +201,39 @@ void oled_show_device_info(const char *info) {
 // ============================================
 
 void oled_show_waiting_for_device(void) {
-    oled_show_message("SEARCHING", "For DFU device");
+    oled_show_message("SEARCHING", "For DFU...");
 }
 
 void oled_show_device_detected(void) {
-    oled_show_message("DEVICE FOUND", "Checking support...");
+    oled_show_message("DEVICE FOUND", "Checking...");
 }
 
 void oled_show_unsupported_device(uint16_t vid, uint16_t pid) {
-    snprintf(line1_buf, sizeof(line1_buf), "UNSUPPORTED");
-    snprintf(line2_buf, sizeof(line2_buf), "VID:0x%04X PID:0x%04X", vid, pid);
+    snprintf(line1_buf, sizeof(line1_buf), "VID:0x%04X", vid);
+    snprintf(line2_buf, sizeof(line2_buf), "PID:0x%04X", pid);
     oled_show_message(line1_buf, line2_buf);
 }
 
 void oled_show_exploit_stage(uint8_t stage_num, const char *stage_name) {
-    snprintf(line1_buf, sizeof(line1_buf), "STAGE %d/5", stage_num);
+    if (!stage_name) return;
+    snprintf(line1_buf, sizeof(line1_buf), "Stage %d/5", stage_num);
     snprintf(line2_buf, sizeof(line2_buf), "%s", stage_name);
     oled_show_message(line1_buf, line2_buf);
 }
 
 void oled_show_success_with_info(const char *info) {
+    if (!info) {
+        oled_show_pwnd_success();
+        return;
+    }
     oled_show_message("SUCCESS", info);
 }
 
 void oled_show_failure_with_info(const char *info) {
+    if (!info) {
+        oled_show_error();
+        return;
+    }
     oled_show_message("FAILED", info);
 }
 
@@ -227,7 +242,7 @@ void oled_show_reset(void) {
 }
 
 void oled_show_ready(void) {
-    oled_show_message("READY", "Waiting for DFU");
+    oled_show_message("READY", "Waiting...");
 }
 
 // ============================================
@@ -236,20 +251,18 @@ void oled_show_ready(void) {
 
 void oled_show_status(bool connected) {
     if (!oled_ready) return;
-    ssd1306_clear();
-    ssd1306_draw_text(0, 0, "Phone:");
+    
     if (connected) {
-        ssd1306_draw_text(0, 16, "Connected");
+        oled_show_message("Phone:", "Connected");
     } else {
-        ssd1306_draw_text(0, 16, "Disconnected");
+        oled_show_message("Phone:", "Disconnected");
     }
-    ssd1306_update();
 }
 
 void oled_show_connecting(void) {
-    oled_show_booting();
+    oled_show_message("CONNECTING", "Please wait...");
 }
 
 void oled_show_running(void) {
-    oled_show_exploiting();
+    oled_show_message("RUNNING", "Exploit active");
 }
