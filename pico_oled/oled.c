@@ -117,6 +117,11 @@ void oled_show_already_pwned(void) {
     oled_show_message("ALREADY PWND", "Device is pwned");
 }
 
+// ============================================
+// Both versions of oled_show_error
+// ============================================
+
+// Version with parameter - for custom error messages
 void oled_show_error(const char *error_msg) {
     if (error_msg) {
         snprintf(line1_buf, sizeof(line1_buf), "✗ ERROR");
@@ -125,6 +130,11 @@ void oled_show_error(const char *error_msg) {
     } else {
         oled_show_message("✗ ERROR", "Check connection");
     }
+}
+
+// Version without parameter - legacy support
+void oled_show_error(void) {
+    oled_show_message("✗ ERROR", "Check connection");
 }
 
 void oled_show_reboot_needed(void) {
@@ -151,42 +161,6 @@ void oled_show_led_sync(const char *state) {
 
 void oled_show_device_info(const char *info) {
     oled_show_message("DEVICE INFO", info);
-}
-
-// ============================================
-// Legacy compatibility functions (keep existing)
-// ============================================
-
-void oled_show_status(bool connected) {
-    if (!oled_ready) return;
-    ssd1306_clear();
-    ssd1306_draw_text(0, 0, "Phone:");
-    if (connected) {
-        ssd1306_draw_text(0, 16, "Connected");
-    } else {
-        ssd1306_draw_text(0, 16, "Disconnected");
-    }
-    ssd1306_update();
-}
-
-void oled_show_connecting(void) {
-    oled_show_booting();  // Reuse new function
-}
-
-void oled_show_running(void) {
-    oled_show_exploiting();  // Reuse new function
-}
-
-void oled_show_error(void) {
-    oled_show_error("Check connection");
-}
-
-void oled_show_unsupported(void) {
-    oled_show_unsupported();
-}
-
-void oled_show_already_pwned(void) {
-    oled_show_already_pwned();
 }
 
 // ============================================
@@ -227,4 +201,36 @@ void oled_show_reset(void) {
 
 void oled_show_ready(void) {
     oled_show_message("READY", "Waiting for DFU");
+}
+
+// ============================================
+// Legacy compatibility functions
+// ============================================
+
+void oled_show_status(bool connected) {
+    if (!oled_ready) return;
+    ssd1306_clear();
+    ssd1306_draw_text(0, 0, "Phone:");
+    if (connected) {
+        ssd1306_draw_text(0, 16, "Connected");
+    } else {
+        ssd1306_draw_text(0, 16, "Disconnected");
+    }
+    ssd1306_update();
+}
+
+void oled_show_connecting(void) {
+    oled_show_booting();  // Reuse new function
+}
+
+void oled_show_running(void) {
+    oled_show_exploiting();  // Reuse new function
+}
+
+void oled_show_unsupported(void) {
+    oled_show_unsupported();
+}
+
+void oled_show_already_pwned(void) {
+    oled_show_already_pwned();
 }
