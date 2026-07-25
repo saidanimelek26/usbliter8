@@ -24,10 +24,10 @@ static struct {
 
 static bus_t gBus = { 0 };
 
-// Store device VID/PID
-static uint16_t g_device_vid = 0;
-static uint16_t g_device_pid = 0;
-static bool g_device_connected = false;
+// FIX 1: volatile so core0 always reads fresh values written by core1
+static volatile uint16_t g_device_vid = 0;
+static volatile uint16_t g_device_pid = 0;
+static volatile bool g_device_connected = false;
 
 // USB Device Descriptor structure
 struct usb_device_descriptor {
@@ -52,7 +52,7 @@ static bool _get_device_descriptor(bus_t *b, struct usb_device_descriptor *desc)
     if (!b || !b->dev || !desc) {
         return false;
     }
-    
+
     // Try to read device descriptor from the connected device
     struct usb_setup_req_header {
         uint8_t  bmRequestType;
@@ -67,7 +67,7 @@ static bool _get_device_descriptor(bus_t *b, struct usb_device_descriptor *desc)
         .wIndex = 0x0000,
         .wLength = sizeof(struct usb_device_descriptor)
     };
-    
+
     int rc = bus_control_xfer(b, (uint8_t *)&req, (uint8_t *)desc, sizeof(*desc), true, 100);
     return (rc == sizeof(*desc));
 }
@@ -81,6 +81,8 @@ void usb_task(void) {
             case USB_CMD_BUS_INIT: {
                 bus_init(&gBus, false);
                 g_device_connected = false;
+                g_device_vid = 0;
+                g_device_pid = 0;
                 ret = 0;
                 break;
             }
@@ -88,17 +90,30 @@ void usb_task(void) {
             case USB_CMD_WAIT_FOR_DEVICE: {
                 bus_wait_for_connect(&gBus);
                 g_device_connected = true;
-                
-                // Try to get VID/PID from device descriptor
+
+                // FIX 2: Give the device time to settle before reading descriptor
+                sleep_ms(100);
+
+                // FIX 2: Retry descriptor read up to 5 times instead of giving up after one attempt
                 struct usb_device_descriptor desc = {0};
-                if (_get_device_descriptor(&gBus, &desc)) {
-                    g_device_vid = desc.idVendor;
-                    g_device_pid = desc.idProduct;
-                    INFO("Device VID=0x%04X, PID=0x%04X", g_device_vid, g_device_pid);
-                } else {
-                    INFO("Failed to read device descriptor");
+                bool got_desc = false;
+                for (int attempt = 0; attempt < 5; attempt++) {
+                    if (_get_device_descriptor(&gBus, &desc)) {
+                        g_device_vid = desc.idVendor;
+                        g_device_pid = desc.idProduct;
+                        INFO("Device VID=0x%04X, PID=0x%04X (attempt %d)",
+                             g_device_vid, g_device_pid, attempt + 1);
+                        got_desc = true;
+                        break;
+                    }
+                    INFO("Descriptor read attempt %d failed, retrying...", attempt + 1);
+                    sleep_ms(50);
                 }
-                
+
+                if (!got_desc) {
+                    INFO("Failed to read device descriptor after all retries");
+                }
+
                 ret = 0;
                 break;
             }
@@ -217,7 +232,7 @@ bool is_device_supported(uint16_t vid, uint16_t pid) {
         INFO("Device not in DFU mode: VID=0x%04X, PID=0x%04X", vid, pid);
         return false;
     }
-    
+
     // If we get here, device is in proper DFU mode
     // The actual device support (A12, A13, S4, S5) will be verified
     // by examining the CPID in exploit.c
