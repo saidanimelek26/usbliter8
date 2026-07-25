@@ -112,20 +112,23 @@ int bus_control_xfer(bus_t *b, const uint8_t setup[8], uint8_t *data, uint16_t d
     }
 
     absolute_time_t deadline = make_timeout_time_ms(timeout_ms);
-    while (b->dev->control_pipe.operation != CONTROL_COMPLETE && b->dev->control_pipe.operation != CONTROL_ERROR) {
+    while (b->dev->control_pipe.stage != STAGE_COMPLETE && b->dev->control_pipe.stage != STAGE_ERROR) {
         if (time_reached(deadline)) {
             return -2;
         }
         tight_loop_contents();
     }
 
-    if (b->dev->control_pipe.operation == CONTROL_ERROR) {
+    if (b->dev->control_pipe.stage == STAGE_ERROR) {
         return -1;
     }
 
     // Return the actual number of bytes transferred
+    // The rx_length is stored in request_length after completion
     if (data_in && data) {
-        return b->dev->control_pipe.rx_length;
+        // Return the actual amount of data received
+        // The request_length gets updated with actual bytes received
+        return b->dev->control_pipe.request_length > data_len ? data_len : b->dev->control_pipe.request_length;
     }
     
     return 0; // Success for OUT transfers
