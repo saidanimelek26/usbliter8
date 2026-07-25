@@ -91,18 +91,32 @@ void usb_task(void) {
                 bus_wait_for_connect(&gBus);
                 g_device_connected = true;
 
-                // FIX 2: Give the device time to settle before reading descriptor
+                // Give the device time to settle after connect
                 sleep_ms(100);
 
-                // FIX 2: Retry descriptor read up to 5 times instead of giving up after one attempt
+                // FIX: EP0 MUST be opened before any control transfer.
+                // bus_wait_for_connect() does NOT open EP0 — b->dev stays
+                // NULL until bus_open_ep0() is called, causing
+                // _get_device_descriptor() to bail out immediately.
+                // Use 64 as the initial max packet size (safe default for
+                // both FS and LS; we update it after reading the descriptor).
+                if (!bus_open_ep0(&gBus, 64)) {
+                    INFO("Failed to open EP0 after connect");
+                    ret = 0;
+                    break;
+                }
+                INFO("EP0 opened, reading device descriptor...");
+
+                // Retry descriptor read up to 5 times
                 struct usb_device_descriptor desc = {0};
                 bool got_desc = false;
                 for (int attempt = 0; attempt < 5; attempt++) {
                     if (_get_device_descriptor(&gBus, &desc)) {
-                        g_device_vid = desc.idVendor;
-                        g_device_pid = desc.idProduct;
-                        INFO("Device VID=0x%04X, PID=0x%04X (attempt %d)",
-                             g_device_vid, g_device_pid, attempt + 1);
+                        g_device_vid      = desc.idVendor;
+                        g_device_pid      = desc.idProduct;
+                        gBus.maxpacket0   = desc.bMaxPacketSize;
+                        INFO("Device VID=0x%04X, PID=0x%04X bMaxPacketSize=%d (attempt %d)",
+                             g_device_vid, g_device_pid, desc.bMaxPacketSize, attempt + 1);
                         got_desc = true;
                         break;
                     }
