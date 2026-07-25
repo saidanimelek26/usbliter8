@@ -222,19 +222,68 @@ int main(void) {
     printf("\n");
 #endif
 
-    // Wait for DFU device
+    // Start USB subsystem
+    printf("Starting USB subsystem...\n");
+    usb_start();
+    sleep_ms(500); // Give USB stack time to initialize
+    
+    usb_bus_init();
+    sleep_ms(200); // Give bus time to initialize
+
+    // Wait for DFU device with improved detection
     printf("Waiting for DFU device...\n");
     oled_show_waiting_dfu();
 
-    usb_start();
-    usb_bus_init();
+    // Try multiple detection attempts with bus resets
+    bool device_found = false;
+    int max_attempts = 10;
+    
+    for (int attempt = 0; attempt < max_attempts; attempt++) {
+        printf("Detection attempt %d/%d...\n", attempt + 1, max_attempts);
+        
+        // Reset the bus before each attempt
+        usb_bus_reset_open_ep0();
+        sleep_ms(200);
+        
+        if (usb_bus_wait_for_device_timeout(3000)) {
+            device_found = true;
+            printf("Device detected on attempt %d\n", attempt + 1);
+            break;
+        }
+        
+        // If device not found, reinitialize
+        if (attempt < max_attempts - 1) {
+            printf("Device not found, reinitializing USB...\n");
+            usb_bus_init();
+            sleep_ms(200);
+        }
+    }
 
-    oled_show_waiting_for_device();
-    usb_bus_wait_for_device();
+    if (!device_found) {
+        printf("ERROR: No DFU device detected after %d attempts!\n", max_attempts);
+        oled_show_error_msg("No DFU device");
+        fatal_failure("No DFU device detected");
+    }
 
-    // Device detected - get info
-    uint16_t vid = usb_get_vid();
-    uint16_t pid = usb_get_pid();
+    // Device detected - get info with retries
+    uint16_t vid = 0, pid = 0;
+    int retry_count = 0;
+    const int max_retries = 5;
+    
+    while (retry_count < max_retries) {
+        vid = usb_get_vid();
+        pid = usb_get_pid();
+        
+        if (vid != 0 || pid != 0) {
+            break;
+        }
+        
+        printf("Retry %d/%d to get VID/PID...\n", retry_count + 1, max_retries);
+        sleep_ms(500);
+        usb_bus_reset_open_ep0();
+        sleep_ms(200);
+        retry_count++;
+    }
 
     printf("Device detected: VID=0x%04X, PID=0x%04X\n", vid, pid);
     oled_show_device_found(vid, pid);
