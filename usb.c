@@ -47,6 +47,15 @@ struct usb_device_descriptor {
     uint8_t  bNumConfigurations;
 } __attribute__((packed));
 
+// USB Setup Request Header
+struct usb_setup_req_header {
+    uint8_t  bmRequestType;
+    uint8_t  bRequest;
+    uint16_t wValue;
+    uint16_t wIndex;
+    uint16_t wLength;
+} __attribute__((packed));
+
 // Helper function to get device descriptor
 static bool _get_device_descriptor(bus_t *b, struct usb_device_descriptor *desc) {
     if (!b || !b->dev || !desc) {
@@ -54,13 +63,7 @@ static bool _get_device_descriptor(bus_t *b, struct usb_device_descriptor *desc)
     }
 
     // Try to read device descriptor from the connected device
-    struct usb_setup_req_header {
-        uint8_t  bmRequestType;
-        uint8_t  bRequest;
-        uint16_t wValue;
-        uint16_t wIndex;
-        uint16_t wLength;
-    } __attribute__((packed)) req = {
+    struct usb_setup_req_header req = {
         .bmRequestType = 0x80,  // Device to Host
         .bRequest = 0x06,       // GET_DESCRIPTOR
         .wValue = 0x0100,       // Device descriptor
@@ -68,7 +71,7 @@ static bool _get_device_descriptor(bus_t *b, struct usb_device_descriptor *desc)
         .wLength = sizeof(struct usb_device_descriptor)
     };
 
-    int rc = bus_control_xfer(b, (uint8_t *)&req, (uint8_t *)desc, sizeof(*desc), true, 100);
+    int rc = bus_control_xfer(b, (uint8_t *)&req, (uint8_t *)desc, sizeof(*desc), true, 200);
     return (rc == sizeof(*desc));
 }
 
@@ -88,46 +91,71 @@ void usb_task(void) {
             }
 
             case USB_CMD_WAIT_FOR_DEVICE: {
-                bus_wait_for_connect(&gBus);
-                g_device_connected = true;
-
-                // Give the device time to settle after connect
-                sleep_ms(100);
-
-                // FIX: EP0 MUST be opened before any control transfer.
-                // bus_wait_for_connect() does NOT open EP0 — b->dev stays
-                // NULL until bus_open_ep0() is called, causing
-                // _get_device_descriptor() to bail out immediately.
-                // Use 64 as the initial max packet size (safe default for
-                // both FS and LS; we update it after reading the descriptor).
-                if (!bus_open_ep0(&gBus, 64)) {
-                    INFO("Failed to open EP0 after connect");
-                    ret = 0;
+                INFO("Waiting for device connection...");
+                
+                // Wait for device connection with timeout
+                if (!bus_wait_for_connect(&gBus)) {
+                    INFO("Device connection timeout");
+                    g_device_connected = false;
+                    ret = -1;
                     break;
                 }
-                INFO("EP0 opened, reading device descriptor...");
-
-                // Retry descriptor read up to 5 times
+                
+                INFO("Device connected!");
+                g_device_connected = true;
+                
+                // Wait for device to settle
+                sleep_ms(200);
+                
+                // Properly enumerate the device
+                if (!bus_enumerate_device(&gBus)) {
+                    INFO("Device enumeration failed");
+                    ret = -1;
+                    break;
+                }
+                
+                // Now read the device descriptor
                 struct usb_device_descriptor desc = {0};
+                struct usb_setup_req_header desc_req = {
+                    .bmRequestType = 0x80,
+                    .bRequest = 0x06,
+                    .wValue = 0x0100,
+                    .wIndex = 0x0000,
+                    .wLength = sizeof(desc)
+                };
+                
                 bool got_desc = false;
                 for (int attempt = 0; attempt < 5; attempt++) {
-                    if (_get_device_descriptor(&gBus, &desc)) {
-                        g_device_vid      = desc.idVendor;
-                        g_device_pid      = desc.idProduct;
-                        gBus.maxpacket0   = desc.bMaxPacketSize;
-                        INFO("Device VID=0x%04X, PID=0x%04X bMaxPacketSize=%d (attempt %d)",
+                    int rc = bus_control_xfer(&gBus, (uint8_t *)&desc_req, (uint8_t *)&desc, sizeof(desc), true, 200);
+                    if (rc == sizeof(desc)) {
+                        g_device_vid = desc.idVendor;
+                        g_device_pid = desc.idProduct;
+                        gBus.maxpacket0 = desc.bMaxPacketSize;
+                        INFO("Device detected: VID=0x%04X, PID=0x%04X, bMaxPacketSize=%d (attempt %d)", 
                              g_device_vid, g_device_pid, desc.bMaxPacketSize, attempt + 1);
                         got_desc = true;
                         break;
                     }
-                    INFO("Descriptor read attempt %d failed, retrying...", attempt + 1);
-                    sleep_ms(50);
+                    INFO("Descriptor read attempt %d failed (rc=%d), retrying...", attempt + 1, rc);
+                    sleep_ms(100);
                 }
-
+                
                 if (!got_desc) {
-                    INFO("Failed to read device descriptor after all retries");
+                    INFO("Failed to read full device descriptor after all retries");
+                    
+                    // Try to get at least VID/PID with a shorter request
+                    desc_req.wLength = 8;
+                    int rc = bus_control_xfer(&gBus, (uint8_t *)&desc_req, (uint8_t *)&desc, 8, true, 200);
+                    if (rc == 8) {
+                        g_device_vid = desc.idVendor;
+                        g_device_pid = desc.idProduct;
+                        INFO("Partial descriptor read: VID=0x%04X, PID=0x%04X", g_device_vid, g_device_pid);
+                    }
                 }
-
+                
+                // Dump bus state for debugging
+                bus_dump_state(&gBus);
+                
                 ret = 0;
                 break;
             }
@@ -248,8 +276,6 @@ bool is_device_supported(uint16_t vid, uint16_t pid) {
     }
 
     // If we get here, device is in proper DFU mode
-    // The actual device support (A12, A13, S4, S5) will be verified
-    // by examining the CPID in exploit.c
     INFO("Device is in DFU mode - support will be verified during exploit");
     return true;
 }
@@ -273,9 +299,6 @@ bool usb_bus_wait_for_device_timeout(uint32_t timeout_ms) {
 }
 
 bool usb_is_device_pwned(void) {
-    // Check if device is already pwned by examining serial number
-    // This would require reading the device serial number
-    // For now, return false
     return false;
 }
 
