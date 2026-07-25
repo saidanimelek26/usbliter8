@@ -28,7 +28,7 @@
 __attribute__((noreturn))
 void fatal_failure(const char *reason) {
     led_set_state(LED_STATE_ERROR);
-    
+
     if (reason) {
         oled_show_error_msg(reason);
         printf("FATAL ERROR: %s\n", reason);
@@ -225,32 +225,32 @@ int main(void) {
     // Wait for DFU device
     printf("Waiting for DFU device...\n");
     oled_show_waiting_dfu();
-    
+
     usb_start();
     usb_bus_init();
-    
+
     oled_show_waiting_for_device();
     usb_bus_wait_for_device();
 
     // Device detected - get info
     uint16_t vid = usb_get_vid();
     uint16_t pid = usb_get_pid();
-    
+
     printf("Device detected: VID=0x%04X, PID=0x%04X\n", vid, pid);
     oled_show_device_found(vid, pid);
     sleep_ms(1000);
-    
-    // Check if device is DFU mode (Apple DFU uses VID=0x5AC, PID=0x1227)
-    if (vid != 0x5AC || pid != 0x1227) {
+
+    // Check if device is DFU mode (Apple DFU uses VID=0x05AC, PID=0x1227)
+    if (vid != 0x05AC || pid != 0x1227) {
         printf("ERROR: Device is not in DFU mode!\n");
-        printf("Expected: VID=0x5AC (Apple), PID=0x1227 (DFU)\n");
+        printf("Expected: VID=0x05AC (Apple), PID=0x1227 (DFU)\n");
         printf("Got: VID=0x%04X, PID=0x%04X\n", vid, pid);
         oled_show_message("ERROR:", "Device not in DFU");
         sleep_ms(2000);
         oled_show_unsupported_device(vid, pid);
         fatal_failure("Device not in DFU mode");
     }
-    
+
     // Check if device CPU is supported
     if (!is_device_supported(vid, pid)) {
         printf("ERROR: Device is not supported!\n");
@@ -259,7 +259,7 @@ int main(void) {
         sleep_ms(2000);
         fatal_failure("CPU not supported");
     }
-    
+
     printf("Device is supported - proceeding with exploit\n");
     oled_show_device_detected();
     sleep_ms(500);
